@@ -53,7 +53,7 @@ Model::Model(const std::string filename)
     in.close();
     std::cerr << "# v# " << nverts() << " f# "  << nfaces() << " vt# " << uv_.size() << " vn# " << norms_.size() << std::endl;
     load_texture(filename, "_diffuse.tga", diffusemap_);
-    load_texture(filename, "_nm.tga", normalmap_);
+    load_texture(filename, "_nm_tangent.tga", normalmap_);
     load_texture(filename, "_spec.tga", specularmap_);
 }
 Model::~Model()
@@ -99,7 +99,7 @@ vec3f Model::vert(const int iface, const int nthvert) const {
 }
 
 vec2f Model::uv(const int iface, const int nthvert) const {
-    return uv_[facet_vrt_[iface * 3 + nthvert]];
+    return uv_[facet_tex_[iface * 3 + nthvert]];
 }
 
 TGAColor Model::diffuse(const vec2f& uv) const {

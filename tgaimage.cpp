@@ -128,7 +128,7 @@ bool TGAImage::read_tga_file(const std::string filepath) {
     std::size_t nbytes = this->width * this->height * this->bytespp;
     this->data = std::vector<std::uint8_t>(nbytes, 0);
     if(header.datatypecode == 2 || header.datatypecode == 3) {
-        in.read(reinterpret_cast<char*>(data.data()), data.size());
+        in.read(reinterpret_cast<char*>(data.data()), nbytes);
         if(!in.good()) {
             in.close();
             std::cerr << "an error occured when reading data" << std::endl;
@@ -148,7 +148,7 @@ bool TGAImage::read_tga_file(const std::string filepath) {
     if(!(header.imagedescriptor & 0x20)) {
         flip_vertically();
     }
-    if(!(header.imagedescriptor & 0x10)) {
+    if((header.imagedescriptor & 0x10)) {
         flip_horizontally();
     }
     in.close();

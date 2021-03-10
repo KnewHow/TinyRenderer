@@ -27,8 +27,8 @@ template<class T, int n> struct vec
     T data[n] = {};
 };
 
-template<class T, int n> double operator*(const vec<T, n>& lhs, const vec<T, n>& rhs) {
-    double ret = 0;
+template<class T, int n> T operator*(const vec<T, n>& lhs, const vec<T, n>& rhs) {
+    T ret = 0;
     for(int i = n; i--; ret += lhs[i]*rhs[i]);
     return ret;
 }
@@ -64,7 +64,7 @@ template<class T, int n> vec<T, n> operator/(const vec<T, n>& lhs, const double 
     return ret;
 }
 
-template<class T, int n1, int n2> vec<T, n1> embed(const vec<T, n2>& v, double fill = 1) {
+template<class T, int n1, int n2> vec<T, n1> embed(const vec<T, n2>& v, T fill = 1) {
     vec<T, n1> ret;
     for(int i = n1; i--; ret[i] = (i < n2 ? v[i] : fill));
     return ret;

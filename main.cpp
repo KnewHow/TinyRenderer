@@ -1,206 +1,100 @@
 #include <iostream>
-#include "tgaimage.h"
-#include "geometry.h"
-#include "model.h"
-
 #include<vector>
 #include<limits>
 
-const TGAColor white = TGAColor(255, 255, 255, 255);
-const TGAColor red   = TGAColor(255, 0, 0,   255);
-const TGAColor green = TGAColor(0, 255, 0, 255);
-const TGAColor blue  = TGAColor(0, 0, 255, 255);
-const int width = 1024;
-const int height = 1024;
-TGAImage image(width, height, TGAImage::RGB);
-float* z_buffer = new float[width * height];
+#include "tgaimage.h"
+#include "geometry.h"
+#include "model.h"
+#include "ourGL.h"
 
-std::vector<vec2f> MSAA_4x4 = {
-    vec2f(0.25, 0.25),
-    vec2f(0.75, 0.25),
-    vec2f(0.25, 0.75),
-    vec2f(0.75, 0.75),
+constexpr int width = 1024;
+constexpr int height = 1024;
+
+extern mat4f ModelView;
+extern mat4f Viewport;
+extern mat4f Projection;
+
+
+const vec3f lightDir(1.0f, 1.0f, 1.0f);
+const vec3f eye(1.0f, 1.0f, 3.0f);
+const vec3f center(0.0f, 0.0f, 0.0f);
+const vec3f up(0.0f, 1.0f, 0.0f);
+
+class IShader: public Shader {
+    const Model& model;
+    vec3f light; // light directory normalized in camera coordinates
+    mat<float, 2, 3> varying_uv; //  triangle uv coordinates, written by vertex shader, read by fragment shader
+    mat3f varying_nrm; // normal of per vertex of triangle
+    mat3f ndc_tri; // vertex with homogenous coordinates in triangle
+
+public:    
+    IShader(const Model& m): model(m){
+        light = (proj<float, 3>(Projection * ModelView * embed<float, 4>(lightDir, 0.0f))).normalize(); // tramsform lightDir into camera coordinates
+    }
+
+    
+    virtual vec4f vertex(const int iface, const int nthvert) override {
+        varying_uv.set_col(nthvert, model.uv(iface, nthvert));
+        varying_nrm.set_col(nthvert, proj<float, 3>((Projection * ModelView).invert_transpose() * embed<float, 4>(model.normal(iface, nthvert), 0.0f))); // transform normal, reference: https://github.com/ssloy/tinyrenderer/wiki/Lesson-5-Moving-the-camera
+        vec4f glVertex = Projection * ModelView * embed<float, 4>(model.vert(iface, nthvert));
+        ndc_tri.set_col(nthvert, proj<float, 3>(glVertex/glVertex[3]));
+        return glVertex;
+    }
+
+    virtual bool fragment(const vec3f& bar, TGAColor& color) override {
+        vec3f bn = (varying_nrm * bar).normalize();
+        vec2f uv = varying_uv * bar;
+        // use tangent space normal texture, you can read by: https://github.com/ssloy/tinyrenderer/wiki/Lesson-6bis-tangent-space-normal-mapping
+        mat3f AI = mat3f{
+            {
+                ndc_tri.col(1) - ndc_tri.col(0),
+                ndc_tri.col(2) - ndc_tri.col(0),
+                bn
+            }
+        }.invert();
+        vec3f i = AI * vec3f(varying_uv[0][1] - varying_uv[0][0], varying_uv[0][2] - varying_uv[0][0], 0.0f);
+        vec3f j = AI * vec3f(varying_uv[1][1] - varying_uv[1][0], varying_uv[1][2] - varying_uv[1][0], 0.0f);
+        
+        mat3f B = mat3f{ {i.normalize(), j.normalize(), bn} }.transpose();
+        vec3f n = (B * model.normal(uv)).normalize(); // get normal from tangent space
+        vec3f r = (n * (n * light) * 2 - light).normalize(); // Phone shading， https://github.com/ssloy/tinyrenderer/wiki/Lesson-6-Shaders-for-the-software-renderer
+        float specular = std::pow(std::max(r.z, 0.0f), 5 + model.specular(uv));
+        float diffuse = std::max(0.0f, n * light);
+        float ambient = 10;
+        TGAColor c = model.diffuse(uv);
+        color = c;
+        for(int i = 0; i < 3; i++) {
+            color[i] = std::min<int>((ambient + c[i] * (diffuse + specular)), 255);
+        }
+        return false;
+    }
 };
 
-
-
-void line(int x0, int y0, int x1, int y1, TGAImage& image, const TGAColor& color) {
-    bool steep = false; 
-    if (std::abs(x0-x1)<std::abs(y0-y1)) { 
-        std::swap(x0, y0); 
-        std::swap(x1, y1); 
-        steep = true; 
-    } 
-    if (x0>x1) { 
-        std::swap(x0, x1); 
-        std::swap(y0, y1); 
-    } 
-    int dx = x1-x0; 
-    int dy = y1-y0; 
-    int derror2 = std::abs(dy)*2; 
-    int error2 = 0; 
-    int y = y0; 
-    for (int x=x0; x<=x1; x++) { 
-        if (steep) { 
-            image.set(y, x, color); 
-        } else { 
-            image.set(x, y, color); 
-        } 
-        error2 += derror2; 
-        if (error2 > dx) { 
-            y += (y1>y0?1:-1); 
-            error2 -= dx*2; 
-        } 
-    }
-}
-
-void line(const vec2i& v1, const vec2i& v2, TGAImage& image, const TGAColor& color) {
-    line(v1.x, v1.y, v2.x, v2.y, image, color);
-}
-
-void triangle_old(vec2i v0, vec2i v1, vec2i v2, TGAImage& image, const TGAColor& color) {
-    if (v0.y==v1.y && v0.y==v2.y) return; // I dont care about degenerate triangles 
-    // sort the vertices, t0, t1, t2 lower−to−upper (bubblesort yay!) 
-    if (v0.y>v1.y) std::swap(v0, v1); 
-    if (v0.y>v2.y) std::swap(v0, v2); 
-    if (v1.y>v2.y) std::swap(v1, v2); 
-    int total_height = v2.y-v0.y; 
-    for (int i=0; i<total_height; i++) { 
-        bool second_half = i>v1.y-v0.y || v1.y==v0.y; 
-        int segment_height = second_half ? v2.y-v1.y : v1.y-v0.y; 
-        float alpha = (float)i/total_height; 
-        float beta  = (float)(i-(second_half ? v1.y-v0.y : 0))/segment_height; // be careful: with above conditions no division by zero here 
-        vec2i A =               v0 + (v2-v0)*alpha; 
-        vec2i B = second_half ? v1 + (v2-v1)*beta : v0 + (v1-v0)*beta; 
-        if (A.x>B.x) std::swap(A, B); 
-        for (int j=A.x; j<=B.x; j++) { 
-            image.set(j, v0.y+i, color); // attention, due to int casts t0.y+i != A.y 
-        } 
-    } 
-}
-
-
-vec3f barycentric(const vec3f& v0, const vec3f& v1, const vec3f& v2, const vec3f& p) {
-    float T = (v1.y - v2.y) * (v0.x - v2.x) + (v2.x - v1.x) * (v0.y - v2.y);
-    float alpha = ((float)(v1.y - v2.y) * (p.x - v2.x) + (v2.x - v1.x) * (p.y - v2.y)) / T;
-    float beta = ((float)(v2.y - v0.y) * (p.x - v2.x) + (v0.x - v2.x) * (p.y - v2.y)) / T;
-    float gamma = 1 - alpha - beta;
-    return vec3f(alpha, beta, gamma);
-}
-
-bool isInnerTriangle(const vec3f& v0, const vec3f& v1, const vec3f& v2, const vec3f& p) {
-    vec2f AB = (v1 - v0).to2d();
-    vec2f AP = (p - v0).to2d();
-    vec2f BC =  (v2 - v1).to2d();
-    vec2f BP = (p - v1).to2d();
-    vec2f CA = (v0 - v2).to2d();
-    vec2f CP =  (p - v2).to2d();
-    float r1 = AB.x * AP.y - AP.x * AB.y;
-    float r2 = BC.x * BP.y - BP.x * BC.y;
-    float r3 = CA.x * CP.y - CP.x * CA.y;
-    if(r1 > 0 && r2 > 0 && r3 > 0) {
-        return true;
-    }
-    return false;
-}
-
-vec3f world2Screen(const vec3f& world) {
-    return vec3f((world.x + 1) * width / 2, (world.y + 1) * height / 2, world.z);
-}
-
-void triangle(const std::vector<vec3f>& vs, const std::vector<vec2f>& uvs, const Model* model, const float intensity, bool withMASS = false) {
-    int minX = std::max(0.0f, std::min(vs[2].x, std::min(vs[0].x, vs[1].x)));
-    int maxX = std::min(width * 1.0f, std::max(vs[2].x, std::max(vs[0].x, vs[1].x)));
-    int minY = std::max(0.0f, std::min(vs[2].y, std::min(vs[1].y, vs[0].y)));
-    int maxY = std::min(height * 1.0f, std::max(vs[2].y, std::max(vs[1].y, vs[0].y)));
-
-
-    for(int x = minX; x <= maxX; x++) {
-        for (int y = minY; y <= maxY; y++) {
-            vec3f p(x, y, 0);
-            vec3f b_coordinate = barycentric(vs[0], vs[1], vs[2], p);
-            if(b_coordinate.x < 0 || b_coordinate.y < 0 || b_coordinate.z < 0)
-                continue;
-            
-            vec2f uv(0, 0);
-            for(int i = 0; i < 3; i++) {
-                p.z += vs[i].z * b_coordinate[i];
-                uv = uv + uvs[i] * b_coordinate[i];
-            }
-            TGAColor color = model->diffuse(uv) * intensity;
-            if(z_buffer[x + width * y] < p.z) {
-                z_buffer[x + width * y] = p.z;
-                if(withMASS) {
-                    int cnt = 0;
-                    for(int i = 0; i < MSAA_4x4.size(); i++) {
-                        float m = x + MSAA_4x4[i].x;
-                        float n = y + MSAA_4x4[i].y;
-                        bool r = isInnerTriangle(vs[0], vs[1], vs[2], vec3f(m, n, 0));
-                        if(r) {
-                            cnt++;
-                        }
-                    }
-                    int total = MSAA_4x4.size();
-                    float sample = (float)cnt / total;
-                    TGAColor c = color * sample;
-                    image.set(x, y, c);
-                } else {
-                    image.set(x, y, color);
-                }
-            }
-        }
-    }
-}
-void loadModel() {
-    std::string objFile = "/home/knewhow/dev/TinyRenderer/obj/african_head/african_head.obj";
-    Model* m = new Model(objFile);
-    long long int face = m->nfaces();
-    std::vector<vec3f> screen_coordinate(3);
-    std::vector<vec3f> world_coordinate(3);
-    std::vector<vec2f> uv(3);
-    vec3f light_dir(0, 0, 1);
-    for(int i = 0; i < face; i++) {
-        for(int j = 0; j < 3; j++) {
-            vec3f v = m->vert(i, j);    
-            world_coordinate[j] = v;
-            screen_coordinate[j] = world2Screen(v);
-            uv[j] = m->uv(i, j);
-        }
-        vec3f AC = world_coordinate[2] - world_coordinate[0];
-        vec3f AB = world_coordinate[1] - world_coordinate[0];
-        vec3f n = cross(AB, AC);
-        n.normalize();
-        float intensity = n * light_dir;
-        if(intensity > 0) {
-            // TGAColor color = TGAColor(intensity * 255, intensity * 255, intensity * 255, 255);
-            triangle(screen_coordinate, uv, m, intensity, false);
-        }
-       
-    }
-}
-
-void rasterize(vec2i v0, vec2i v1, const TGAColor& color, int y_buffer[]) {
-    if(v0.x > v1.x) {
-        std::swap(v0, v1);
-    }
-    for(int x = v0.x; x <= v1.x; x++) {
-        float t = (x - v0.x) / (float)(v1.x - v0.x);
-        int y = v0.y * (1.0f - t) + v1.y * t;
-        if(y_buffer[y] < y) {
-            y_buffer[y] = y;
-            image.set(x, 0, color);
-        }
-    }
-}
-
 int main(int, char**) {
-    int y_buffer[width];
-    for(int i = 0; i < width * height; i++) 
-        z_buffer[i] = std::numeric_limits<float>::min();
-    
-    loadModel();
 
-    // image.flip_vertically(); // i want to have the origin at the left bottom corner of the image
-    image.write_tga_file("output.tga");
+    std::vector<std::string> modelPaths = {
+        "../obj/diablo3_pose/diablo3_pose.obj",
+        "../obj/floor.obj"
+
+    };
+    std::vector<float> zBuffer(width * height, -std::numeric_limits<float>::max());
+    TGAImage image(width, height, TGAImage::RGB);
+    lookat(eye, center, up);
+    viewport(width / 8, height / 8, width * 3 / 4, height * 3 / 4);
+    projection(-1.0f/(eye - center).norm());
+
+    for(const auto& path: modelPaths) {
+        Model m(path);
+        IShader shader(m);
+        for(int i = 0; i < m.nfaces(); i++) {
+            std::array<vec4f, 3> clipVerts = {};
+            for(int j = 0; j < 3; j++) {
+                clipVerts[j] = shader.vertex(i, j);
+            }
+            triangle(clipVerts, shader, image, zBuffer);
+        }
+    }
+    
+    image.write_tga_file("result.tga");
 }
 
