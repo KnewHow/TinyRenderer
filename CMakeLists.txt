@@ -4,7 +4,7 @@ project(CMakeLists.txt VERSION 0.1.0)
 include(CTest)
 enable_testing()
 
-add_executable(CMakeLists main.cpp tgaimage.h tgaimage.cpp geometry.h geometry.cpp model.h model.cpp)
+add_executable(CMakeLists main.cpp tgaimage.h tgaimage.cpp geometry.h geometry.cpp model.h model.cpp ourGL.h ourGL.cpp)
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
