@@ -49,7 +49,7 @@ public:
      * @param color the color of pixel will be returned if we don't it
      * @return if we discard this pixle, true: Yes, false: No
     */
-    virtual bool fragment(const vec3f& bar, TGAColor& color) = 0;
+    virtual bool fragment(const vec3f& bar, TGAColor& color, float x = 0, float y = 0) = 0;
 
 };
 

@@ -1,5 +1,7 @@
-#include "ourGL.h"
 #include <limits>
+
+#include "ourGL.h"
+#include "global.h"
 
 mat4f ModelView;
 mat4f Viewport;
@@ -14,6 +16,16 @@ void viewport(const int x, const int y, const int w, const int h) {
             {0, 0, 0, 1}, 
         }
     };
+    // float alpha = 90.0f * MY_PI / 180.0f;
+    // mat4f rotation = {
+    //     {
+    //         {std::cos(alpha), -std::sin(alpha), 0, 0},
+    //         {std::sin(alpha), std::cos(alpha), 0, 0},
+    //         {0, 0, 1, 0},
+    //         {0, 0, 0, 1}
+    //     }
+    // };
+    Viewport = Viewport;
 }
 
 void projection(const float coeff) {
@@ -33,6 +45,7 @@ void lookat(const vec3f& eye, const vec3f& center, const vec3f& up) {
     vec3f y = cross(z, x).normalize();
     mat4f minv = {{{x.x, x.y, x.z, 0},   {y.x, y.y, y.z, 0},   {z.x, z.y, z.z, 0},   {0, 0, 0, 1}}};
     mat4f tr = {{{1,0,0,-center.x}, {0,1,0,-center.y}, {0,0,1,-center.z}, {0,0,0,1}}};
+    
     ModelView = minv * tr;
 }
 
@@ -68,7 +81,7 @@ void triangle(const std::array<vec4f, 3>& clipVerts, Shader& shader, TGAImage& i
             if(bcScreen.x < 0 || bcScreen.y < 0 || bcScreen.z < 0 || fragDepth < zBuffer[idx])
                 continue;
             TGAColor color;
-            bool discard = shader.fragment(bcClip, color);
+            bool discard = shader.fragment(bcClip, color, x, y);
             if(discard)
                 continue;
             zBuffer[idx] = fragDepth;
