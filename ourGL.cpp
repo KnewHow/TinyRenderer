@@ -70,9 +70,9 @@ void triangle(const std::array<vec4f, 3>& clipVerts, Shader& shader, TGAImage& i
             bboxMax[j] = std::min(clamp[j], std::max(bboxMax[j], pts2[i][j]));
         }
     }
-
-    for(int x = (int)bboxMin.x; x <= bboxMax.x; x++) {
-        for(int y = (int)bboxMin.y; y <= bboxMax.y; y++) {
+    #pragma omp parallel for
+    for(int x = (int)bboxMin.x; x <= (int)bboxMax.x; x++) {
+        for(int y = (int)bboxMin.y; y <= (int)bboxMax.y; y++) {
             vec3f bcScreen = barycentric(pts2, vec2f(x, y));
             vec3f bcClip = vec3f(bcScreen.x / pts[0][3], bcScreen.y / pts[1][3], bcScreen.z / pts[2][3]);
             bcClip = bcClip / (bcClip.x + bcClip.y + bcClip.z); // barycentric is non-liner, you can refer: https://github.com/ssloy/tinyrenderer/wiki/Technical-difficulties-linear-interpolation-with-perspective-deformations

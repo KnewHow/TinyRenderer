@@ -1,6 +1,7 @@
 #include <iostream>
 #include<vector>
 #include<limits>
+#include <ctime>
 
 #include "tgaimage.h"
 #include "geometry.h"
@@ -107,10 +108,12 @@ int main(int, char**) {
     };
     std::vector<float> zBuffer(width * height, -std::numeric_limits<float>::max());
     std::vector<float> depthShadow(width * height, -std::numeric_limits<float>::max());
-
+    TGAImage depthImage(width, height, TGAImage::RGB);
+    TGAImage image(width, height, TGAImage::RGB);
+    
+    time_t beginRender = std::time(nullptr);
     // render shadow
     {
-        TGAImage depthImage(width, height, TGAImage::RGB);
         lookat(lightDir, center, up);
         viewport(width / 8, height / 8, width * 3 / 4, height * 3 / 4);
         projection(0);
@@ -130,12 +133,10 @@ int main(int, char**) {
                 depthShadow[i + j * width] = depthImage.get(i, j).bgra[0]/255.0f;
             }
         }
-        depthImage.write_tga_file("depth_image.tag");
     }
 
     // rendering object
     {
-        TGAImage image(width, height, TGAImage::RGB);
         lookat(lightDir, center, up);
         viewport(width / 8, height / 8, width * 3 / 4, height * 3 / 4);
         projection(-1.0f/(eye - center).norm());
@@ -151,7 +152,12 @@ int main(int, char**) {
                 triangle(clipVerts, shader, image, zBuffer);
             }
         }
-        image.write_tga_file("result.tga");
+
+       
     }
+    time_t endRender = std::time(nullptr);
+    std::cout << "Render took: " << (endRender - beginRender) * 1000 << " millseconds" << std::endl;
+    image.write_tga_file("result.tga");
+    depthImage.write_tga_file("depth_image.tag");
 }
 
