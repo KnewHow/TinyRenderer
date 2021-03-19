@@ -137,7 +137,7 @@ int main(int, char**) {
 
     // rendering object
     {
-        lookat(lightDir, center, up);
+        lookat(eye, center, up);
         viewport(width / 8, height / 8, width * 3 / 4, height * 3 / 4);
         projection(-1.0f/(eye - center).norm());
 
